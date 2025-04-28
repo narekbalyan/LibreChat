@@ -1388,79 +1388,103 @@ ${convo}
         ) {
           params.stream_options = { include_usage: true };
         }
-        const stream = await openai.beta.chat.completions
-          .stream(params)
-          .on('abort', () => {
-            /* Do nothing here */
-          })
-          .on('error', (err) => {
-            handleOpenAIErrors(err, errorCallback, 'stream');
-          })
-          .on('finalChatCompletion', async (finalChatCompletion) => {
-            const finalMessage = finalChatCompletion?.choices?.[0]?.message;
-            if (!finalMessage) {
-              return;
-            }
-            await streamPromise;
-            if (finalMessage?.role !== 'assistant') {
-              finalChatCompletion.choices[0].message.role = 'assistant';
-            }
+        let streamFinished = false;
 
-            if (typeof finalMessage.content !== 'string' || finalMessage.content.trim() === '') {
-              finalChatCompletion.choices[0].message.content = this.streamHandler.tokens.join('');
-            }
-          })
-          .on('finalMessage', (message) => {
-            if (message?.role !== 'assistant') {
-              stream.messages.push({
-                role: 'assistant',
-                content: this.streamHandler.tokens.join(''),
-              });
-              UnexpectedRoleError = true;
-            }
+        if (modelOptions.stream) {
+          streamPromise = new Promise((resolve) => {
+            streamResolve = resolve;
           });
 
-        if (this.continued === true) {
-          const latestText = addSpaceIfNeeded(
-            this.currentMessages[this.currentMessages.length - 1]?.text ?? '',
-          );
-          this.streamHandler.handle({
-            choices: [
-              {
-                delta: {
-                  content: latestText,
-                },
-              },
-            ],
-          });
-        }
+          const stream = await openai.beta.chat.completions
+            .stream(params)
+            .on('abort', () => {
+              /* Do nothing */
+            })
+            .on('error', (err) => {
+              handleOpenAIErrors(err, errorCallback, 'stream');
+            })
+            .on('finalChatCompletion', async (finalChatCompletion) => {
+              const finalMessage = finalChatCompletion?.choices?.[0]?.message;
+              if (!finalMessage) {
+                return;
+              }
+              await streamPromise;
+              if (finalMessage?.role !== 'assistant') {
+                finalChatCompletion.choices[0].message.role = 'assistant';
+              }
 
-        for await (const chunk of stream) {
-          // Add finish_reason: null if missing in any choice
-          if (chunk.choices) {
-            chunk.choices.forEach((choice) => {
-              if (!('finish_reason' in choice)) {
-                choice.finish_reason = null;
+              if (typeof finalMessage.content !== 'string' || finalMessage.content.trim() === '') {
+                finalChatCompletion.choices[0].message.content = this.streamHandler.tokens.join('');
+              }
+
+              streamFinished = true;
+
+              try {
+                stream.controller.abort();
+              } catch (e) {
+                console.warn('Failed to abort stream after final completion:', e);
+              }
+            })
+            .on('finalMessage', (message) => {
+              if (message?.role !== 'assistant') {
+                stream.messages.push({
+                  role: 'assistant',
+                  content: this.streamHandler.tokens.join(''),
+                });
+                UnexpectedRoleError = true;
               }
             });
+
+          if (this.continued === true) {
+            const latestText = addSpaceIfNeeded(
+              this.currentMessages[this.currentMessages.length - 1]?.text ?? '',
+            );
+            this.streamHandler.handle({
+              choices: [
+                {
+                  delta: {
+                    content: latestText,
+                  },
+                },
+              ],
+            });
           }
-          this.streamHandler.handle(chunk);
-          if (abortController.signal.aborted) {
-            stream.controller.abort();
-            break;
+
+          try {
+            for await (const chunk of stream) {
+              if (chunk.choices) {
+                chunk.choices.forEach((choice) => {
+                  if (!('finish_reason' in choice)) {
+                    choice.finish_reason = null;
+                  }
+                });
+              }
+              this.streamHandler.handle(chunk);
+              if (abortController.signal.aborted) {
+                stream.controller.abort();
+                break;
+              }
+
+              if (streamFinished) {
+                break;
+              }
+
+              await sleep(streamRate);
+            }
+          } catch (err) {
+            console.error('Error during stream for-await:', err);
+          } finally {
+            streamResolve();
           }
 
-          await sleep(streamRate);
-        }
-
-        streamResolve();
-
-        if (!UnexpectedRoleError) {
-          chatCompletion = await stream.finalChatCompletion().catch((err) => {
-            handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
-          });
+          if (!UnexpectedRoleError) {
+            chatCompletion = await stream.finalChatCompletion().catch((err) => {
+              handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
+            });
+          }
         }
       }
+
       // regular completion
       else {
         chatCompletion = await openai.chat.completions
