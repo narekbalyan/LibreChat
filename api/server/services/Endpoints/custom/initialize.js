@@ -12,7 +12,7 @@ const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
 const { isUserProvided, sleep } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { OpenAIClient } = require('~/app');
+const { MLGatewayCustomOpenAIClient } = require('~/app');
 
 const { PROXY } = process.env;
 
@@ -166,7 +166,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     };
   }
 
-  const client = new OpenAIClient(apiKey, clientOptions);
+  const client = new MLGatewayCustomOpenAIClient(clientOptions);
   return {
     client,
     openAIApiKey: apiKey,
