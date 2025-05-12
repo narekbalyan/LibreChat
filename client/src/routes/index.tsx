@@ -17,6 +17,7 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import ModelsStatus from './ModelsStatus';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -91,6 +92,11 @@ export const router = createBrowserRouter([
             element: <Search />,
           },
         ],
+      },
+      {
+        path: 'models-status',
+        element: <ModelsStatus />,
+        errorElement: <RouteErrorBoundary />,
       },
     ],
   },
