@@ -25,8 +25,7 @@ const STATUS_CLASSES = {
 };
 
 const getUrlAndEndpointType = (endpoint: string) => {
-  const custom = ['OpenRouter', 'groq', 'Mistral', 'Portkey'];
-  const isCustom = custom.includes(endpoint);
+  const isCustom = !(endpoint in EndpointURLs);
 
   const url = isCustom ? EndpointURLs.custom : EndpointURLs[endpoint as EModelEndpoint];
   const endpointType = isCustom ? EModelEndpoint.custom : undefined;

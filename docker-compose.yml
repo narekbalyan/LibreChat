@@ -34,6 +34,8 @@ services:
     user: "${UID}:${GID}"
     volumes:
       - ./data-node:/data/db
+    ports:
+    - "27017:27017"
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
