@@ -1,20 +1,12 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui';
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table';
-import {
-  GPTIcon,
-  AnthropicIcon,
-  GoogleMinimalIcon,
-  AssistantIcon,
-  BedrockIcon,
-  MinimalPlugin,
-} from '~/components/svg';
-import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import { cn } from '~/utils';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { RefreshCcwIcon } from 'lucide-react';
+import { MinimalIcon } from '~/components/Endpoints';
 import { EndpointURLs } from 'librechat-data-provider';
 
 interface ModelStatus {
@@ -26,33 +18,10 @@ interface ModelStatus {
 
 const STATUS_CLASSES = {
   Active: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
-  'Testing...': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
+  Checking: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
   Inactive: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
   Unavailable: 'bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300',
   None: 'bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300',
-};
-
-const STATUS_ORDER = {
-  Active: 0,
-  'Testing...': 1,
-  Inactive: 2,
-  Unavailable: 3,
-  None: 4,
-};
-
-const getModelIcon = (type: EModelEndpoint) => {
-  const iconProps = { className: 'h-5 w-5' };
-  const iconMap = {
-    [EModelEndpoint.openAI]: <GPTIcon {...iconProps} />,
-    [EModelEndpoint.azureOpenAI]: <GPTIcon {...iconProps} />,
-    [EModelEndpoint.anthropic]: <AnthropicIcon {...iconProps} />,
-    [EModelEndpoint.google]: <GoogleMinimalIcon {...iconProps} />,
-    [EModelEndpoint.assistants]: <AssistantIcon {...iconProps} />,
-    [EModelEndpoint.azureAssistants]: <AssistantIcon {...iconProps} />,
-    [EModelEndpoint.bedrock]: <BedrockIcon {...iconProps} />,
-    [EModelEndpoint.gptPlugins]: <MinimalPlugin {...iconProps} />,
-  };
-  return iconMap[type] ?? <UnknownIcon {...iconProps} context="menu-item" endpoint={type} />;
 };
 
 const getUrlAndEndpointType = (endpoint: string) => {
@@ -105,7 +74,7 @@ export default function ModelsStatus() {
     async (endpoint: string, model: string) => {
       const key = `${endpoint}-${model}`;
       setButtonLoading(key);
-      setStatuses((prev) => ({ ...prev, [key]: 'Testing...' }));
+      setStatuses((prev) => ({ ...prev, [key]: 'Checking' }));
 
       const { url, endpointType } = getUrlAndEndpointType(endpoint);
       const body = getRequestBody(endpoint, model, endpointType);
@@ -178,10 +147,13 @@ export default function ModelsStatus() {
       accessorKey: 'endpoint',
       header: 'Endpoint',
       cell: ({ row }) => {
-        const { type, endpoint } = row.original;
+        const { endpoint } = row.original;
         return (
           <div className="flex items-center gap-2">
-            {getModelIcon(type)}
+            <MinimalIcon
+              isCreatedByUser={false}
+              endpoint={endpoint}
+            />
             <span>{endpoint}</span>
           </div>
         );
