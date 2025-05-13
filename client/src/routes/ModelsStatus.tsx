@@ -1,13 +1,14 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui';
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table';
-import { cn } from '~/utils';
+import { cn, mapEndpoints } from '~/utils';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { RefreshCcwIcon } from 'lucide-react';
 import { MinimalIcon } from '~/components/Endpoints';
 import { EndpointURLs } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from '~/data-provider';
 
 interface ModelStatus {
   endpoint: string;
@@ -60,14 +61,16 @@ export default function ModelsStatus() {
   const [buttonLoading, setButtonLoading] = useState<string | null>(null);
   const [shouldCheck, setShouldCheck] = useState(false);
 
+  const { data: endpoints = [] } = useGetEndpointsQuery({
+    select: mapEndpoints,
+  });
+
   const { data: modelsData = {} } = useGetModelsQuery({
     refetchOnMount: 'always',
     cacheTime: 0,
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
-
-  const endpointKeys = useMemo(() => Object.keys(modelsData), [modelsData]);
 
   const testModel = useCallback(
     async (endpoint: string, model: string) => {
@@ -101,7 +104,7 @@ export default function ModelsStatus() {
     setLoading(true);
     try {
       await Promise.all(
-        endpointKeys.map((endpoint) =>
+        endpoints.map((endpoint) =>
           Promise.all(
             (modelsData[endpoint] || []).map((model: string) => testModel(endpoint, model)),
           ),
@@ -112,7 +115,7 @@ export default function ModelsStatus() {
     } finally {
       setLoading(false);
     }
-  }, [endpointKeys, modelsData, testModel]);
+  }, [endpoints, modelsData, testModel]);
 
   useEffect(() => {
     const timer = setTimeout(() => setShouldCheck(true), 1000);
@@ -124,7 +127,7 @@ export default function ModelsStatus() {
   }, [shouldCheck, token, testAllModels]);
 
   const sortedData = useMemo(() => {
-    const data: ModelStatus[] = endpointKeys.flatMap((endpoint) => {
+    const data: ModelStatus[] = endpoints.flatMap((endpoint) => {
       const models = modelsData[endpoint] || [];
       const type = endpoint as EModelEndpoint;
 
@@ -139,7 +142,7 @@ export default function ModelsStatus() {
     });
 
     return data;
-  }, [endpointKeys, modelsData, statuses]);
+  }, [endpoints, modelsData, statuses]);
 
   const columns: ColumnDef<ModelStatus>[] = [
     {
