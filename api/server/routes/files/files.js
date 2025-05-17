@@ -1,4 +1,5 @@
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsPromises = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
 const {
@@ -20,6 +21,10 @@ const { loadAuthValues } = require('~/app/clients/tools/util');
 const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
+const path = require('path');
+const { uploadLocalFile } = require('~/server/services/Files/Local/crud');
+const { createFile } = require('~/models/File');
+const { FileContext } = require('~/models/File');
 
 const router = express.Router();
 
@@ -235,7 +240,48 @@ router.post('/', async (req, res) => {
       return await processAgentFileUpload({ req, res, metadata });
     }
 
-    await processFileUpload({ req, res, metadata });
+    if (req.file.mimetype === 'text/csv' || req.file.mimetype === 'application/csv') {
+      try {
+        const { filepath, bytes } = await uploadLocalFile({
+          req,
+          file: req.file,
+          file_id: req.file_id,
+        });
+
+        const fileRecord = await createFile(
+          {
+            user: req.user.id,
+            file_id: req.file_id,
+            temp_file_id: metadata.temp_file_id,
+            bytes,
+            filepath,
+            filename: req.file.originalname,
+            source: 'local',
+            type: 'text/csv',
+            embedded: false,
+          },
+          true,
+        );
+
+        return res.status(200).json({
+          message: 'CSV processed successfully',
+          ...fileRecord,
+        });
+      } catch (error) {
+        logger.error('[/files] Error processing CSV file:', error);
+        try {
+          await fsPromises.unlink(req.file.path);
+        } catch (cleanupError) {
+          logger.error('[/files] Error cleaning up temp file:', cleanupError);
+        }
+        return res.status(500).json({
+          message: 'Error processing CSV file',
+          error: error.message,
+        });
+      }
+    } else {
+      await processFileUpload({ req, res, metadata });
+    }
   } catch (error) {
     let message = 'Error processing file';
     logger.error('[/files] Error processing file:', error);
@@ -246,7 +292,7 @@ router.post('/', async (req, res) => {
 
     // TODO: delete remote file if it exists
     try {
-      await fs.unlink(req.file.path);
+      await fsPromises.unlink(req.file.path);
       cleanup = false;
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
@@ -256,11 +302,15 @@ router.post('/', async (req, res) => {
 
   if (cleanup) {
     try {
-      await fs.unlink(req.file.path);
+      await fsPromises.unlink(req.file.path);
     } catch (error) {
       logger.error('[/files] Error deleting file after file processing:', error);
     }
   }
 });
+
+async function sendToModel(csvText) {
+  return { response: 'Model response here' };
+}
 
 module.exports = router;
