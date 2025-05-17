@@ -1,12 +1,12 @@
 const { EModelEndpoint } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { TrackingHeaders } = require('~/utils/TrackingHeaders');
 const BaseClient = require('~/app/clients/BaseClient');
 const { logger } = require('~/config');
 const axios = require('axios');
 const { createContextHandlers, truncateText } = require('~/app/clients/prompts');
 const mlGatewayErrorHandle = require('~/app/clients/utils/mlGatewayErrorHandle');
 const { STACK_ID } = process.env;
+const fs = require('fs');
 
 class MLGatewayCustomOpenAIClient extends BaseClient {
   constructor(options = {}) {
@@ -45,7 +45,6 @@ class MLGatewayCustomOpenAIClient extends BaseClient {
   }
 
   getBuildMessagesOptions(opts) {
-    logger.debug('MLGatewayCustomOpenAIClient does n\'t use getBuildMessagesOptions');
     return opts;
   }
 
@@ -65,8 +64,6 @@ class MLGatewayCustomOpenAIClient extends BaseClient {
       parentMessageId,
     });
 
-    logger.debug('[MLGatewayCustomOpenAIClient] orderedMessages', { orderedMessages, parentMessageId });
-
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       // const images = attachments.filter((file) => file.type.includes('image'));
@@ -81,7 +78,11 @@ class MLGatewayCustomOpenAIClient extends BaseClient {
         };
       }
 
-      this.options.attachments = await this.addImageURLs(latestMessage, attachments);
+      if (attachments.length && attachments[0].type?.endsWith('csv')) {
+        latestMessage.csv_url = attachments[0].filepath;
+      } else {
+        this.options.attachments = await this.addImageURLs(latestMessage, attachments);
+      }
     }
 
     if (this.message_file_map) {
@@ -124,9 +125,9 @@ class MLGatewayCustomOpenAIClient extends BaseClient {
         Meta: meta,
         Messages: [envelopeMessage],
       };
-      const completionsUrl = `${process.env.ML_GATEWAY}${this.options.reverseProxyUrl}/${this.options.modelOptions.model}`;
-      const headers = await TrackingHeaders(this.options.req.headers, requestId, 'ml-gateway-custom-openai-chat');
-      const response = await axios.post(completionsUrl, mlGwRequest, { headers });
+      const completionsUrl = `${this.options.reverseProxyUrl}/${this.options.modelOptions.model}`;
+      // const headers = await TrackingHeaders(this.options.req.headers, requestId, 'ml-gateway-custom-openai-chat');
+      const response = await axios.post(completionsUrl, mlGwRequest);
       return response.data?.Messages[0]?.Payload?.completion?.choices[0]?.message?.content;
     } catch (error) {
       mlGatewayErrorHandle(error);
@@ -135,30 +136,34 @@ class MLGatewayCustomOpenAIClient extends BaseClient {
 
   async sendCompletion(payload, opts = {}) {
     try {
-      const messageContent = payload
-        .map(chatMessage => {
-          const message = {
-            'role': chatMessage.isCreatedByUser ? 'user' : 'assistant',
-            'content': chatMessage.text,
-          };
-          if (chatMessage.image_urls?.length > 0) {
-            const imageData = chatMessage.image_urls[0].image_url.url;
-            const parts = imageData.split(', ');
-            const fileType = parts[0].split(':')[1].split(';')[0];
-            const mediaBase64MessageData = parts[0];
-            const base64Index = mediaBase64MessageData.indexOf('base64');
-            const imageBase64String = mediaBase64MessageData.substring(base64Index + 7);
-            message.content.push({
-              'type': 'image',
-              'source': {
-                'type': 'base64',
-                'media_type': fileType,
-                'data': imageBase64String,
-              },
-            });
-          }
-          return message;
-        });
+      const messageContent = payload.map((chatMessage) => {
+        const message = {
+          role: chatMessage.isCreatedByUser ? 'user' : 'assistant',
+          content: chatMessage.text,
+        };
+        if (chatMessage.image_urls?.length > 0) {
+          const imageData = chatMessage.image_urls[0].image_url.url;
+          const parts = imageData.split(', ');
+          const fileType = parts[0].split(':')[1].split(';')[0];
+          const mediaBase64MessageData = parts[0];
+          const base64Index = mediaBase64MessageData.indexOf('base64');
+          const imageBase64String = mediaBase64MessageData.substring(base64Index + 7);
+          message.content.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: fileType,
+              data: imageBase64String,
+            },
+          });
+        }
+
+        if (chatMessage.csv_url) {
+          const csvData = fs.readFileSync(`.${chatMessage.csv_url}`, 'utf8');
+          message.content = `${message.content}:\n\n${csvData}`;
+        }
+        return message;
+      });
       const requestId = payload[payload.length - 1].messageId;
       return await this.sendMLGatewayRequest(messageContent, requestId);
     } catch (error) {
