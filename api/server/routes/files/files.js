@@ -21,7 +21,6 @@ const { loadAuthValues } = require('~/app/clients/tools/util');
 const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
-const csv = require('csv-parser');
 const path = require('path');
 const { uploadLocalFile } = require('~/server/services/Files/Local/crud');
 const { createFile } = require('~/models/File');
